@@ -1,0 +1,11 @@
+<map id="howl.data.dataset.serialize.PathDatasetLoader" name="howl.data.dataset.serialize.PathDatasetLoader">
+<area shape="rect" id="node1" title=" " alt="" coords="5,203,181,244"/>
+<area shape="rect" id="node2" href="$classhowl_1_1data_1_1dataset_1_1serialize_1_1RegisteredPathDatasetLoader.html" title=" " alt="" coords="229,169,425,211"/>
+<area shape="rect" id="node9" href="$classhowl_1_1data_1_1dataset_1_1serialize_1_1WakeWordDatasetLoader.html" title=" " alt="" coords="239,235,415,276"/>
+<area shape="rect" id="node3" href="$classhowl_1_1data_1_1dataset_1_1serialize_1_1AudioClipDatasetLoader.html" title=" " alt="" coords="515,5,691,47"/>
+<area shape="rect" id="node4" href="$classhowl_1_1data_1_1dataset_1_1serialize_1_1GoogleSpeechCommandsDatasetLoader.html" title=" " alt="" coords="473,71,732,112"/>
+<area shape="rect" id="node5" href="$classhowl_1_1data_1_1dataset_1_1serialize_1_1HeySnipsWakeWordLoader.html" title=" " alt="" coords="512,136,693,177"/>
+<area shape="rect" id="node6" href="$classhowl_1_1data_1_1dataset_1_1serialize_1_1MozillaCommonVoiceLoader.html" title=" " alt="" coords="509,201,696,243"/>
+<area shape="rect" id="node7" href="$classhowl_1_1data_1_1dataset_1_1serialize_1_1MozillaKeywordLoader.html" title=" " alt="" coords="515,267,691,308"/>
+<area shape="rect" id="node8" href="$classhowl_1_1data_1_1dataset_1_1serialize_1_1MozillaWakeWordLoader.html" title=" " alt="" coords="515,332,691,373"/>
+</map>

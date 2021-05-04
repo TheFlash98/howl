@@ -1,0 +1,11 @@
+<map id="howl.data.transform.augment.AugmentModule" name="howl.data.transform.augment.AugmentModule">
+<area shape="rect" id="node1" title=" " alt="" coords="137,201,328,243"/>
+<area shape="rect" id="node3" href="$classhowl_1_1data_1_1transform_1_1augment_1_1DatasetMixer.html" title=" " alt="" coords="376,5,567,47"/>
+<area shape="rect" id="node4" href="$classhowl_1_1data_1_1transform_1_1augment_1_1NegativeSampleTransform.html" title=" " alt="" coords="376,71,567,112"/>
+<area shape="rect" id="node5" href="$classhowl_1_1data_1_1transform_1_1augment_1_1NoiseTransform.html" title=" " alt="" coords="376,136,567,177"/>
+<area shape="rect" id="node6" href="$classhowl_1_1data_1_1transform_1_1augment_1_1SpecAugmentTransform.html" title=" " alt="" coords="376,201,567,243"/>
+<area shape="rect" id="node7" href="$classhowl_1_1data_1_1transform_1_1augment_1_1StandardAudioTransform.html" title=" " alt="" coords="376,267,567,308"/>
+<area shape="rect" id="node8" href="$classhowl_1_1data_1_1transform_1_1augment_1_1TimeshiftTransform.html" title=" " alt="" coords="376,332,567,373"/>
+<area shape="rect" id="node9" href="$classhowl_1_1data_1_1transform_1_1augment_1_1TimestretchTransform.html" title=" " alt="" coords="376,397,567,439"/>
+<area shape="rect" id="node2" title=" " alt="" coords="5,209,89,235"/>
+</map>

@@ -1,0 +1,6 @@
+<map id="howl.data.dataset.base.EmplacableExample" name="howl.data.dataset.base.EmplacableExample">
+<area shape="rect" id="node1" title=" " alt="" coords="5,39,229,80"/>
+<area shape="rect" id="node2" href="$classhowl_1_1data_1_1dataset_1_1base_1_1AudioClipExample.html" title=" " alt="" coords="277,39,468,80"/>
+<area shape="rect" id="node3" href="$classhowl_1_1data_1_1dataset_1_1base_1_1ClassificationClipExample.html" title=" " alt="" coords="516,5,751,47"/>
+<area shape="rect" id="node4" href="$classhowl_1_1data_1_1dataset_1_1base_1_1WakeWordClipExample.html" title=" " alt="" coords="538,71,729,112"/>
+</map>
