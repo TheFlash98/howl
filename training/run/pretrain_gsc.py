@@ -76,7 +76,7 @@ def main():
     dev_dl = StandardAudioDataLoaderBuilder(dev_ds, collate_fn=compose(truncater, batchifier)).build(SETTINGS.training.batch_size)
     test_dl = StandardAudioDataLoaderBuilder(test_ds, collate_fn=compose(truncater, batchifier)).build(SETTINGS.training.batch_size)
 
-    model = RegisteredModel.find_registered_class(args.model)(30).to(device)
+    model = RegisteredModel.find_registered_class(args.model)(len(loader.vocab) + 1).to(device)
     params = list(filter(lambda x: x.requires_grad, model.parameters()))
     optimizer = AdamW(params, SETTINGS.training.learning_rate, weight_decay=SETTINGS.training.weight_decay)
     logging.info(f'{sum(p.numel() for p in params)} parameters')

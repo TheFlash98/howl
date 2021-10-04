@@ -79,11 +79,14 @@ class HowlClient:
             # duplicate callback execution
             if self._infer_detected:
                 return data_ok
+            print(self.engine.sequence)
 
             self._infer_detected = True
-            phrase = ' '.join(self.ctx.vocab[x]
-                              for x in self.engine.sequence).title()
-            logging.info(f'{phrase} detected')
+            #phrase = ' '.join(self.ctx.vocab[x]
+                              #for x in self.engine.sequence).title()
+            phrase = self.ctx.vocab[self.engine.detected_label]
+            prediction_confidence = self.engine.prediction_confidence
+            logging.info(f'{phrase} detected with {prediction_confidence} confidence')
             # Execute user-provided listener callbacks
             for lis in self.listeners:
                 lis(self.engine.sequence)

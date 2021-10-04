@@ -38,7 +38,7 @@ class TrainingSettings(BaseSettings):
     num_epochs: int = 10
     num_labels: int = 2
     learning_rate: float = 1e-3
-    device: str = "cuda:0"
+    device: str = "cpu:0"
     batch_size: int = 16
     lr_decay: float = 0.75
     max_window_size_seconds: float = 0.75

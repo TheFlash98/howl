@@ -26,7 +26,7 @@ def main():
     device = torch.device(settings.training.device)
     zmuv_transform = ZmuvTransform().to(device)
     model = RegisteredModel.find_registered_class(args.model)(ctx.num_labels).to(device).eval()
-    zmuv_transform.load_state_dict(torch.load(str(ws.path / "zmuv.pt.bin"), map_location=device))
+    zmuv_transform.load_state_dict(torch.load(str(ws.path / "zmuv.pt.bin"), map_location='cpu'))
 
     ws.load_model(model, best=True)
     model.streaming()
@@ -40,8 +40,8 @@ def main():
         )
     else:
         engine = SequenceInferenceEngine(model, zmuv_transform, ctx)
-    
-    client = HowlClient(engine, ctx)
+    # chunk size of 1000 is required for GSC dataset 
+    client = HowlClient(engine, ctx, -1, 1000)
     client.start().join()
 
 

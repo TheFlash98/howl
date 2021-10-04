@@ -47,6 +47,9 @@ class InferenceEngine:
         self.time_provider = time_provider
         self.reset()
 
+        self.detected_label = 10
+        self.prediction_confidence = 0
+
     def to(self, device: torch.device):
         self.model = self.model.to(device)
         self.zmuv = self.zmuv.to(device)
@@ -83,18 +86,35 @@ class InferenceEngine:
 
         for history in self.label_history:
             curr_timestamp, label = history
-            target_label = self.sequence[target_state]
-            if label == target_label:
-                # move to next state
-                target_state += 1
-                if target_state == len(self.sequence):
-                    # goal state is reached
+            if label in self.sequence:
+                if target_state == 0:
+                    curr_label = label
+                    target_state += 1
+                elif target_state < 5:
+                    if curr_label == label:
+                        target_state += 1
+                    else:
+                        curr_label = label
+                        target_state = 1
+                else:
+                    self.detected_label = label
                     return True
-                curr_label = self.sequence[target_state - 1]
-                last_valid_timestamp = curr_timestamp
-            elif label == curr_label:
-                # label has not changed, only update last_valid_timestamp
-                last_valid_timestamp = curr_timestamp
+            # if label in self.sequence:
+            #     print(self.label_history)
+            #     self.detected_label = label
+            #     return True 
+            # target_label = self.sequence[target_state]
+            # if label == target_label:
+            #     # move to next state
+            #     target_state += 1
+            #     if target_state == len(self.sequence):
+            #         # goal state is reached
+            #         return True
+            #     curr_label = self.sequence[target_state - 1]
+            #     last_valid_timestamp = curr_timestamp
+            # elif label == curr_label:
+            #     # label has not changed, only update last_valid_timestamp
+            #     last_valid_timestamp = curr_timestamp
             elif last_valid_timestamp + self.tolerance_window_ms < curr_timestamp:
                 # out of tolerance window, start from the first state
                 curr_label = None
@@ -111,6 +131,7 @@ class InferenceEngine:
         lattice_max = np.max(lattice, 0)
         max_label = lattice_max.argmax()
         max_prob = lattice_max[max_label]
+        self.prediction_confidence = max_prob
         if self.coloring:
             max_label = self.coloring.color_map.get(max_label, self.negative_label)
         if max_prob < self.threshold:
@@ -168,7 +189,10 @@ class FrameInferenceEngine(InferenceEngine):
     @torch.no_grad()
     def infer(self, audio_data: torch.Tensor) -> bool:
         sequence_present = False
+        #print(len(audio_data), self.max_window_size_ms, self.eval_stride_size_ms, self.sample_rate)
+        #GSC - 8000 1000 63 16000
         for window in stride(audio_data, self.max_window_size_ms, self.eval_stride_size_ms, self.sample_rate):
+            #print("FROM INFER", window.size(-1))
             if window.size(-1) < 1000:
                 break
             self.ingest_frame(window.squeeze(0), curr_time=self.curr_time)
@@ -190,4 +214,5 @@ class FrameInferenceEngine(InferenceEngine):
         p *= self.inference_weights
         p = p / p.sum()
         label = self._append_probability_frame(p, curr_time=curr_time)
+        #print(label)
         return label
