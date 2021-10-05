@@ -82,19 +82,14 @@ def main():
     ws.load_model(model, best=True)
     pytorch_total_params = sum(p.numel() for p in model.parameters())
     print(pytorch_total_params)
-    #example = Path("/home/sarthak/Projects/Augnito/datasets/google-speech-commands-v2/five/439c84f4_nohash_1.wav")
-    #example_dl = AudioClipMetadata(path=example.absolute(), transcription=example.parent.name)
     dataset_path = "/home/sarthak/Projects/Augnito/datasets/google-speech-commands"
     sr = settings.audio.sample_rate
     ds_kwargs = dict(sr=sr, mono=settings.audio.use_mono)
     vocab = settings.training.vocab
     label_map = defaultdict(lambda: len(vocab))
     label_map.update({k: idx for idx, k in enumerate(vocab)})
-    #metadata_list = []
-    #metadata_list.append(example_dl)
     batchifier = partial(batchify, label_provider=lambda x: x.label)
     truncater = partial(truncate_length, length=int(settings.training.max_window_size_seconds * sr))
-    #example_ds = AudioClassificationDataset(metadata_list=metadata_list, label_map=label_map, set_type=DatasetType, **ds_kwargs)
     test_ds = load_data(Path(dataset_path), DatasetType.TEST, **ds_kwargs)
     prep_dl = StandardAudioDataLoaderBuilder(test_ds, collate_fn=compose(truncater, batchifier)).build(1)
     print(evaluate_accuracy(prep_dl, "sample"))
