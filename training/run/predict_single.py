@@ -2,6 +2,7 @@ from pathlib import Path
 from collections import defaultdict, Counter
 from functools import partial
 import logging
+import json
 
 from tqdm import trange, tqdm
 
@@ -82,6 +83,16 @@ def main():
     zmuv_transform.load_state_dict(torch.load(str(ws.path / "zmuv.pt.bin"), map_location='cpu'))
 
     ws.load_model(model, best=True)
+    print(model)
+    print("Model's state_dict:")
+    # weights_dict = defaultdict()
+    # for param_tensor in model.state_dict():
+    #     print(param_tensor, "\t", model.state_dict()[param_tensor].size())
+    #     weights_dict.update({param_tensor : model.state_dict()[param_tensor].tolist()})
+    # for key in weights_dict.keys():
+    #     print(key, type(weights_dict[key]))
+    # with open(str(ws.path / "weights.json"), "w") as outfile:
+    #     json.dump(weights_dict, outfile)
     pytorch_total_params = sum(p.numel() for p in model.parameters())
     print(pytorch_total_params)
     dataset_path = "/home/sarthak/Projects/Augnito/datasets/google-speech-commands-v2"
@@ -112,10 +123,12 @@ def main():
         train_mixer = DatasetMixer(noise_ds_train, seed=0, do_replace=False)
         all_mixer = DatasetMixer(noise_ds, seed=0, do_replace=False)
     train_comp = compose(*train_comp)
+    print(len(test_ds))
     print(evaluate_accuracy(test_ds, f"Noisy test set with {0} noise files"))
-    print(evaluate_accuracy(test_ds, f"Noisy test set with {len(noise_ds_train.metadata_list)} noise files", mixer=train_mixer))
-    print(evaluate_accuracy(test_ds, f"Noisy test set with {len(noise_ds_test.metadata_list)} noise files", mixer=test_mixer))
-    print(evaluate_accuracy(test_ds, f"Noisy test set with {len(noise_ds.metadata_list)} noise files", mixer=all_mixer))
+    if settings.training.use_noise_dataset:
+        print(evaluate_accuracy(test_ds, f"Noisy test set with {len(noise_ds_train.metadata_list)} noise files", mixer=train_mixer))
+        print(evaluate_accuracy(test_ds, f"Noisy test set with {len(noise_ds_test.metadata_list)} noise files", mixer=test_mixer))
+        print(evaluate_accuracy(test_ds, f"Noisy test set with {len(noise_ds.metadata_list)} noise files", mixer=all_mixer))
 
 if __name__ == "__main__":
     main()

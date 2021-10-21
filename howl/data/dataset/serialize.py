@@ -220,7 +220,12 @@ class GoogleSpeechCommandsDatasetLoader(RegisteredPathDatasetLoader, name="gsc")
                 key = str(Path(path.parent.name) / path.name)
                 if file_map[key] != set_type:
                     continue
-                metadata_list.append(AudioClipMetadata(path=path.absolute(), transcription=path.parent.name))
+                metadata_list.append(AudioClipMetadata(path=path.absolute(), transcription=path.parent.name,
+                                                        end_timestamps=[0,0,0,0,0,0,0,0,0,0]))
+            if self.use_bg_noise:
+                return WakeWordDataset(
+                    metadata_list=metadata_list, set_type=set_type,**dataset_kwargs
+                )
             return AudioClassificationDataset(
                 metadata_list=metadata_list, label_map=label_map, set_type=set_type, **dataset_kwargs
             )

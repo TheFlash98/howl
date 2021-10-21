@@ -7,7 +7,7 @@ from torchaudio.transforms import MelSpectrogram, ComputeDeltas
 import librosa
 import torch
 import torch.nn as nn
-
+import torchaudio
 from howl.data.dataset import EmplacableExample, WakeWordClipExample, AudioClipDataset
 from howl.settings import SETTINGS
 from .meyda import MeydaMelSpectrogram
@@ -177,6 +177,14 @@ class DatasetMixer(AugmentModule):
             bg_audio = bg_ex[..., a:b]
             alpha = 1 if param.name == 'replace' else self.rand.random() * param.magnitude
             mixed_wf = waveform * (1 - alpha) + bg_audio * alpha
+            # noise_path = "/home/sarthak/Projects/Augnito/datasets/noise_mix_data/%s_%s_%s" % (example.metadata.audio_id,
+            #                                                                         example.metadata.transcription,
+            #                                                                         "noise.wav")
+            # path = "/home/sarthak/Projects/Augnito/datasets/noise_mix_data/%s_%s%s" % (example.metadata.audio_id,
+            #                                                                             example.metadata.transcription,
+            #                                                                             ".wav")
+            # torchaudio.save(path, waveform.unsqueeze(0), 16000)
+            # torchaudio.save(noise_path, mixed_wf.unsqueeze(0), 16000)
             ex = example.emplaced_audio_data(mixed_wf, new=alpha == 1)
             new_examples.append(ex)
         return new_examples
