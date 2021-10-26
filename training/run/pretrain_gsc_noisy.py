@@ -58,29 +58,30 @@ def main():
 
     args = apb.parser.parse_args()
 
-    use_frame = SETTINGS.training.objective == "frame"
-    ctx = InferenceContext(SETTINGS.training.vocab, token_type=SETTINGS.training.token_type, use_blank=not use_frame)
-    if use_frame:
-        batchifier = WakeWordFrameBatchifier(
-            ctx.negative_label, window_size_ms=int(SETTINGS.training.max_window_size_seconds * 1000)
-        )
-        criterion = nn.CrossEntropyLoss()
-    else:
-        tokenizer = WakeWordTokenizer(ctx.vocab, ignore_oov=False)
-        batchifier = AudioSequenceBatchifier(ctx.negative_label, tokenizer)
-        criterion = nn.CTCLoss(ctx.blank_label)
-
+    # use_frame = SETTINGS.training.objective == "frame"
+    #ctx = InferenceContext(SETTINGS.training.vocab, token_type=SETTINGS.training.token_type, use_blank=not use_frame)
+    # if use_frame:
+    #     batchifier = WakeWordFrameBatchifier(
+    #         ctx.negative_label, window_size_ms=int(SETTINGS.training.max_window_size_seconds * 1000)
+    #     )
+    #     criterion = nn.CrossEntropyLoss()
+    # else:
+    #     tokenizer = WakeWordTokenizer(ctx.vocab, ignore_oov=False)
+    #     batchifier = AudioSequenceBatchifier(ctx.negative_label, tokenizer)
+    #     criterion = nn.CTCLoss(ctx.blank_label)
+    
     ws = Workspace(Path(args.workspace), delete_existing=not args.eval)
     writer = ws.summary_writer
     set_seed(SETTINGS.training.seed)
-    loader = GoogleSpeechCommandsDatasetLoader(SETTINGS.training.vocab, SETTINGS.training.use_noise_dataset)
+    loader = GoogleSpeechCommandsDatasetLoader(SETTINGS.training.vocab)
     sr = SETTINGS.audio.sample_rate
-    ds_kwargs = dict(sr=sr, mono=SETTINGS.audio.use_mono, frame_labeler=ctx.labeler)
+    ds_kwargs = dict(sr=sr, mono=SETTINGS.audio.use_mono)
     train_ds, dev_ds, test_ds = loader.load_splits(Path(SETTINGS.dataset.dataset_path), **ds_kwargs)
 
     device = torch.device(SETTINGS.training.device)
     std_transform = StandardAudioTransform().to(device).eval()
     zmuv_transform = ZmuvTransform().to(device)
+    batchifier = partial(batchify, label_provider=lambda x: x.label)
     truncater = partial(truncate_length, length=int(SETTINGS.training.max_window_size_seconds * sr))
     train_comp = (truncater,
                          TimeshiftTransform().train(),
@@ -110,7 +111,7 @@ def main():
     optimizer = AdamW(params, SETTINGS.training.learning_rate, weight_decay=SETTINGS.training.weight_decay)
     logging.info(f'{sum(p.numel() for p in params)} parameters')
     criterion = nn.CrossEntropyLoss()
-
+    print(model)
     if (ws.path / 'zmuv.pt.bin').exists():
         zmuv_transform.load_state_dict(torch.load(str(ws.path / 'zmuv.pt.bin')))
     else:
@@ -135,6 +136,7 @@ def main():
     writer.add_scalar('Meta/Parameters', sum(p.numel() for p in params))
     dev_acc = 0
     for epoch_idx in trange(SETTINGS.training.num_epochs, position=0, leave=True):
+        print(len(train_dl))
         model.train()
         std_transform.train()
         pbar = tqdm(train_dl,
@@ -142,27 +144,32 @@ def main():
                     position=1,
                     desc='Training',
                     leave=True)
-        for batch in pbar:
-            batch.to(device)
-            audio_data = zmuv_transform(std_transform(batch.audio_data))
-            scores = model(audio_data, std_transform.compute_lengths(batch.lengths))
-            optimizer.zero_grad()
-            model.zero_grad()
-            labels = batch.labels.to(device)
-            loss = criterion(scores, labels)
-            loss.backward()
-            optimizer.step()
-            pbar.set_postfix(dict(loss=f'{loss.item():.3}'))
-            writer.add_scalar('Training/Loss', loss.item(), epoch_idx)
-
+        try :
+            for batch in pbar:
+                batch.to(device)
+                audio_data = zmuv_transform(std_transform(batch.audio_data))
+                #print(audio_data.shape)
+                scores = model(audio_data, std_transform.compute_lengths(batch.lengths))
+                optimizer.zero_grad()
+                model.zero_grad()
+                labels = batch.labels.to(device)
+                loss = criterion(scores, labels)
+                loss.backward()
+                optimizer.step()
+                pbar.set_postfix(dict(loss=f'{loss.item():.3}'))
+                writer.add_scalar('Training/Loss', loss.item(), epoch_idx)
+        except Exception as e:
+            print(e)
+        #print("BATCH OVER")
         for group in optimizer.param_groups:
             group['lr'] *= SETTINGS.training.lr_decay
         dev_acc = evaluate_accuracy(dev_dl, 'Dev', save=True)
+    #print("EPOCH OVER")
     test_acc = evaluate_accuracy(test_dl, 'Test')
 
     print("model: ", args.model)
     print("dev_acc: ", dev_acc)
     print("test_acc: ", test_acc)
-# NUM_EPOCHS=20 MAX_WINDOW_SIZE_SECONDS=1 VOCAB='["yes","no","up","down","left","right","on","off","stop","go"]' BATCH_SIZE=64 LR_DECAY=0.8 LEARNING_RATE=0.01 USE_NOISE_DATASET=True python -m training.run.pretrain_gsc --model res8 --workspace workspaces/google-noisy-v2
+# NUM_EPOCHS=20 MAX_WINDOW_SIZE_SECONDS=1 VOCAB='["yes","no"]' BATCH_SIZE=64 LR_DECAY=0.8 LEARNING_RATE=0.01 USE_NOISE_DATASET=True python -m training.run.pretrain_gsc_noisy --model res8 --workspace workspaces/google-noisy-v3
 if __name__ == '__main__':
     main()
