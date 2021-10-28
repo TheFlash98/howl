@@ -9,7 +9,6 @@ from tqdm import trange, tqdm
 import torch
 from torch.utils import data
 from torchsummary import summary
-from howl.client import HowlClient
 from howl.context import InferenceContext
 from howl.data.transform import compose, ZmuvTransform, StandardAudioTransform,\
     NoiseTransform, batchify, WakeWordFrameBatchifier, truncate_length, DatasetMixer
