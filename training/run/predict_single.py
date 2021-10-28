@@ -44,8 +44,6 @@ def main():
             num_tot += scores.size(0)
             labels = torch.tensor([label_map[batch.metadata.transcription]]).to(device)
             num_corr += (scores.max(1)[1] == labels).float().sum().item()
-            if(scores.max(1)[1] == torch.tensor([1])):
-                print("HEY")
             acc = num_corr / num_tot
             pbar.set_postfix(accuracy=f'{acc:.4}')
         return num_corr / num_tot
@@ -153,10 +151,7 @@ def main():
     vocab = settings.training.vocab
     label_map = defaultdict(lambda: len(vocab))
     label_map.update({k: idx for idx, k in enumerate(vocab)})
-    truncater = partial(truncate_length, length=int(settings.training.max_window_size_seconds * sr))
     test_ds = load_data(Path(dataset_path), DatasetType.TEST, **ds_kwargs)
-    use_frame = SETTINGS.training.objective == "frame"
-    ctx = InferenceContext(SETTINGS.training.vocab, token_type=SETTINGS.training.token_type, use_blank=not use_frame)
     label_map = defaultdict(lambda: len(SETTINGS.training.vocab))
     label_map.update({k: idx for idx, k in enumerate(SETTINGS.training.vocab)})
     ww_train_ds, ww_dev_ds, ww_test_ds = (
