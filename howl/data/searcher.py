@@ -75,7 +75,7 @@ class WordTranscriptSearcher(TranscriptSearcher):
         """
         encoded_output = self.tokenizer.encode(item)
         encoded_str = ''.join(map(str, encoded_output))
-        return self.inference_sequence_str in encoded_str
+        return encoded_str in self.inference_sequence_str
 
     def contains_any(self, item: str) -> bool:
         """retrun true if at least one vocab is in the item
