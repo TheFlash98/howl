@@ -99,6 +99,8 @@ class InferenceEngine:
                 else:
                     self.detected_label = label
                     return True
+                self.detected_label = label
+                return True
             # if label in self.sequence:
             #     print(self.label_history)
             #     self.detected_label = label

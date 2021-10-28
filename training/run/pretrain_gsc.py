@@ -133,7 +133,7 @@ def main():
     ww_train_ds.extend(train_ds)
     ww_dev_ds.extend(dev_ds)
     ww_test_ds.extend(test_ds)
-    print_stats("Wake word dataset", ctx, ww_train_ds, ww_dev_ds, ww_test_ds)
+    print_stats("Hey Augnito dataset", ctx, ww_train_ds, ww_dev_ds, ww_test_ds)
 
     ww_dev_pos_ds = ww_dev_ds.filter(lambda x: ctx.searcher.search(x.transcription), clone=True)
     print_stats("Dev pos dataset", ctx, ww_dev_pos_ds)
