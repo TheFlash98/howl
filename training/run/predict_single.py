@@ -18,8 +18,11 @@ from howl.data.dataset.base import AudioClipMetadata, DatasetType
 from howl.data.dataset.dataset import AudioClassificationDataset
 from howl.data.dataset import RecursiveNoiseDatasetLoader, Sha256Splitter, WakeWordDataset
 from howl.data.dataloader import StandardAudioDataLoaderBuilder
-# from howl.model.inference import FrameInferenceEngine, SequenceInferenceEngine
-# from howl.model import ConfusionMatrix
+from howl.model.inference import FrameInferenceEngine, SequenceInferenceEngine
+from howl.model import ConfusionMatrix
+from .create_raw_dataset import print_stats
+from howl.settings import SETTINGS
+
 
 from .args import ArgumentParserBuilder, opt
 
@@ -41,10 +44,59 @@ def main():
             num_tot += scores.size(0)
             labels = torch.tensor([label_map[batch.metadata.transcription]]).to(device)
             num_corr += (scores.max(1)[1] == labels).float().sum().item()
+            if(scores.max(1)[1] == torch.tensor([1])):
+                print("HEY")
             acc = num_corr / num_tot
             pbar.set_postfix(accuracy=f'{acc:.4}')
         return num_corr / num_tot
+    def evaluate_engine(
+        dataset: AudioClassificationDataset,
+        prefix: str,
+        save: bool = False,
+        positive_set: bool = False,
+        write_errors: bool = True,
+        mixer: DatasetMixer = None,
+    ):
+        std_transform.eval()
 
+        # if use_frame:
+        #     engine = FrameInferenceEngine(
+        #         int(SETTINGS.training.max_window_size_seconds * 1000),
+        #         int(SETTINGS.training.eval_stride_size_seconds * 1000),
+        #         model,
+        #         zmuv_transform,
+        #         ctx,
+        #     )
+        # else:
+        engine = SequenceInferenceEngine(model, zmuv_transform, ctx)
+        model.eval()
+        conf_matrix = ConfusionMatrix()
+        pbar = tqdm(dataset, desc=prefix)
+        if write_errors:
+            with (ws.path / "errors.tsv").open("a") as f:
+                print(prefix, file=f)
+        for idx, ex in enumerate(pbar):
+            if mixer is not None:
+                (ex,) = mixer([ex])
+            audio_data = ex.audio_data.to(device)
+            engine.reset()
+            seq_present = engine.infer(audio_data)
+            if seq_present != positive_set and write_errors:
+                with (ws.path / "errors.tsv").open("a") as f:
+                    f.write(
+                        f"{ex.metadata.transcription}\t{int(seq_present)}\t{int(positive_set)}\t{ex.metadata.path}\n"
+                    )
+            conf_matrix.increment(seq_present, positive_set)
+            pbar.set_postfix(dict(mcc=f"{conf_matrix.mcc}", c=f"{conf_matrix}"))
+
+        logging.info(f"{conf_matrix}")
+        # if args.eval:
+        #     threshold = engine.threshold
+        #     with (ws.path / (str(round(threshold, 2)) + "_results.csv")).open("a") as f:
+        #         f.write(f"{prefix},{threshold},{conf_matrix.tp},{conf_matrix.tn},{conf_matrix.fp},{conf_matrix.fn}\n")
+    def do_evaluate():
+        evaluate_engine(ww_test_pos_ds, "Test positive", positive_set=True)
+        evaluate_engine(ww_test_neg_ds, "Test negative", positive_set=False)
     def load_data(path, set_type, **dataset_kwargs):
         file_map = defaultdict(lambda: DatasetType.TRAINING)
         with (path / "testing_list.txt").open() as f:
@@ -59,8 +111,8 @@ def main():
                 continue
             metadata_list.append(AudioClipMetadata(path=test.absolute(), transcription=test.parent.name, 
                                 end_timestamps=[0,0,0,0,0,0,0,0,0,0]))
-        return WakeWordDataset(
-            metadata_list=metadata_list, set_type=set_type, **dataset_kwargs
+        return AudioClassificationDataset(
+            metadata_list=metadata_list, label_map=label_map, set_type=set_type, **dataset_kwargs
         )
 
 
@@ -97,19 +149,29 @@ def main():
     print(pytorch_total_params)
     dataset_path = "/home/sarthak/Projects/Augnito/datasets/google-speech-commands-v2"
     sr = settings.audio.sample_rate
-    ds_kwargs = dict(sr=sr, mono=settings.audio.use_mono, frame_labeler=ctx.labeler)
+    ds_kwargs = dict(sr=sr, mono=settings.audio.use_mono)
     vocab = settings.training.vocab
     label_map = defaultdict(lambda: len(vocab))
     label_map.update({k: idx for idx, k in enumerate(vocab)})
-    batchifier = WakeWordFrameBatchifier(
-            ctx.negative_label, window_size_ms=int(settings.training.max_window_size_seconds * 1000)
-        )
     truncater = partial(truncate_length, length=int(settings.training.max_window_size_seconds * sr))
     test_ds = load_data(Path(dataset_path), DatasetType.TEST, **ds_kwargs)
-    prep_dl = StandardAudioDataLoaderBuilder(test_ds, collate_fn=compose(truncater, batchifier)).build(1)
-
+    use_frame = SETTINGS.training.objective == "frame"
+    ctx = InferenceContext(SETTINGS.training.vocab, token_type=SETTINGS.training.token_type, use_blank=not use_frame)
+    label_map = defaultdict(lambda: len(SETTINGS.training.vocab))
+    label_map.update({k: idx for idx, k in enumerate(SETTINGS.training.vocab)})
+    ww_train_ds, ww_dev_ds, ww_test_ds = (
+        AudioClassificationDataset(metadata_list=[], label_map=label_map, set_type=DatasetType.TRAINING, **ds_kwargs),
+        AudioClassificationDataset(metadata_list=[], label_map=label_map, set_type=DatasetType.DEV, **ds_kwargs),
+        AudioClassificationDataset(metadata_list=[], label_map=label_map, set_type=DatasetType.TEST, **ds_kwargs),
+    )
+    
+    #train_ds, dev_ds, test_ds = loader.load_splits(ds_path, **ds_kwargs)
+    ww_test_ds.extend(test_ds)
+    ww_test_pos_ds = ww_test_ds.filter(lambda x: ctx.searcher.search(x.transcription), clone=True)
+    print_stats("Test pos dataset", ctx, ww_test_pos_ds)
+    ww_test_neg_ds = ww_test_ds.filter(lambda x: not ctx.searcher.search(x.transcription), clone=True)
+    print_stats("Test neg dataset", ctx, ww_test_neg_ds)
     print(settings.training.use_noise_dataset)
-    train_comp = (NoiseTransform().train(), batchifier)
     if settings.training.use_noise_dataset:
         noise_ds = RecursiveNoiseDatasetLoader().load(
             Path(settings.raw_dataset.noise_dataset_path), sr=settings.audio.sample_rate, mono=settings.audio.use_mono
@@ -117,18 +179,15 @@ def main():
         logging.info(f"Loaded {len(noise_ds.metadata_list)} noise files.")
         noise_ds_train, noise_ds_dev = noise_ds.split(Sha256Splitter(50))
         noise_ds_dev, noise_ds_test = noise_ds_dev.split(Sha256Splitter(50))
-        train_comp = (DatasetMixer(noise_ds_train).train(),) + train_comp
-        dev_mixer = DatasetMixer(noise_ds_dev, seed=0, do_replace=False)
         test_mixer = DatasetMixer(noise_ds_test, seed=0, do_replace=False)
         train_mixer = DatasetMixer(noise_ds_train, seed=0, do_replace=False)
         all_mixer = DatasetMixer(noise_ds, seed=0, do_replace=False)
-    train_comp = compose(*train_comp)
     print(len(test_ds))
     print(evaluate_accuracy(test_ds, f"Noisy test set with {0} noise files"))
     if settings.training.use_noise_dataset:
         print(evaluate_accuracy(test_ds, f"Noisy test set with {len(noise_ds_train.metadata_list)} noise files", mixer=train_mixer))
         print(evaluate_accuracy(test_ds, f"Noisy test set with {len(noise_ds_test.metadata_list)} noise files", mixer=test_mixer))
         print(evaluate_accuracy(test_ds, f"Noisy test set with {len(noise_ds.metadata_list)} noise files", mixer=all_mixer))
-
+    do_evaluate()
 if __name__ == "__main__":
     main()

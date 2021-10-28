@@ -10,18 +10,19 @@ import torch.nn as nn
 
 from .args import ArgumentParserBuilder, opt
 from howl.context import InferenceContext
-from howl.data.dataset import GoogleSpeechCommandsDatasetLoader
+from howl.data.dataset import GoogleSpeechCommandsDatasetLoader, AudioClassificationDataset
 from howl.data.dataloader import StandardAudioDataLoaderBuilder
 from howl.data.transform import compose, ZmuvTransform, StandardAudioTransform,\
     NoiseTransform, batchify, TimeshiftTransform, WakeWordFrameBatchifier, truncate_length,\
     AudioSequenceBatchifier, DatasetMixer
 from howl.settings import SETTINGS
-from howl.model import RegisteredModel, Workspace
+from howl.model import RegisteredModel, Workspace, ConfusionMatrix
 from howl.utils.random import set_seed
 from howl.data.dataset.base import AudioClipMetadata, DatasetType
 from howl.data.dataset import RecursiveNoiseDatasetLoader, Sha256Splitter, WakeWordDataset
 from howl.data.tokenize import WakeWordTokenizer
-
+from .create_raw_dataset import print_stats
+from howl.model.inference import FrameInferenceEngine, SequenceInferenceEngine
 
 def main():
     def evaluate_accuracy(data_loader, prefix: str, save: bool = False):
@@ -49,6 +50,65 @@ def main():
             tqdm.write(str(acc))
 
         return num_corr / num_tot
+    def evaluate_engine(
+        dataset: WakeWordDataset,
+        prefix: str,
+        save: bool = False,
+        positive_set: bool = False,
+        write_errors: bool = True,
+        mixer: DatasetMixer = None,
+    ):
+        std_transform.eval()
+
+        if use_frame:
+            engine = FrameInferenceEngine(
+                int(SETTINGS.training.max_window_size_seconds * 1000),
+                int(SETTINGS.training.eval_stride_size_seconds * 1000),
+                model,
+                zmuv_transform,
+                ctx,
+            )
+        else:
+            engine = SequenceInferenceEngine(model, zmuv_transform, ctx)
+        model.eval()
+        conf_matrix = ConfusionMatrix()
+        pbar = tqdm(dataset, desc=prefix)
+        if write_errors:
+            with (ws.path / "errors.tsv").open("a") as f:
+                print(prefix, file=f)
+        for idx, ex in enumerate(pbar):
+            if mixer is not None:
+                (ex,) = mixer([ex])
+            audio_data = ex.audio_data.to(device)
+            engine.reset()
+            seq_present = engine.infer(audio_data)
+            if seq_present != positive_set and write_errors:
+                with (ws.path / "errors.tsv").open("a") as f:
+                    f.write(
+                        f"{ex.metadata.transcription}\t{int(seq_present)}\t{int(positive_set)}\t{ex.metadata.path}\n"
+                    )
+            conf_matrix.increment(seq_present, positive_set)
+            pbar.set_postfix(dict(mcc=f"{conf_matrix.mcc}", c=f"{conf_matrix}"))
+
+        logging.info(f"{conf_matrix}")
+        if save and not args.eval:
+            writer.add_scalar(f"{prefix}/Metric/tp", conf_matrix.tp, epoch_idx)
+            ws.increment_model(model, conf_matrix.tp)
+        if args.eval:
+            threshold = engine.threshold
+            with (ws.path / (str(round(threshold, 2)) + "_results.csv")).open("a") as f:
+                f.write(f"{prefix},{threshold},{conf_matrix.tp},{conf_matrix.tn},{conf_matrix.fp},{conf_matrix.fn}\n")
+    def do_evaluate():
+        evaluate_engine(ww_dev_pos_ds, "Dev positive", positive_set=True)
+        evaluate_engine(ww_dev_neg_ds, "Dev negative", positive_set=False)
+        if SETTINGS.training.use_noise_dataset:
+            evaluate_engine(ww_dev_pos_ds, "Dev noisy positive", positive_set=True, mixer=dev_mixer)
+            evaluate_engine(ww_dev_neg_ds, "Dev noisy negative", positive_set=False, mixer=dev_mixer)
+        evaluate_engine(ww_test_pos_ds, "Test positive", positive_set=True)
+        evaluate_engine(ww_test_neg_ds, "Test negative", positive_set=False)
+        if SETTINGS.training.use_noise_dataset:
+            evaluate_engine(ww_test_pos_ds, "Test noisy positive", positive_set=True, mixer=test_mixer)
+            evaluate_engine(ww_test_neg_ds, "Test noisy negative", positive_set=False, mixer=test_mixer)
 
     apb = ArgumentParserBuilder()
     apb.add_options(opt('--model', type=str, choices=RegisteredModel.registered_names(), default='las'),
@@ -77,6 +137,31 @@ def main():
     sr = SETTINGS.audio.sample_rate
     ds_kwargs = dict(sr=sr, mono=SETTINGS.audio.use_mono)
     train_ds, dev_ds, test_ds = loader.load_splits(Path(SETTINGS.dataset.dataset_path), **ds_kwargs)
+    
+    use_frame = SETTINGS.training.objective == "frame"
+    ctx = InferenceContext(SETTINGS.training.vocab, token_type=SETTINGS.training.token_type, use_blank=not use_frame)
+    label_map = defaultdict(lambda: len(SETTINGS.training.vocab))
+    label_map.update({k: idx for idx, k in enumerate(SETTINGS.training.vocab)})
+    ww_train_ds, ww_dev_ds, ww_test_ds = (
+        AudioClassificationDataset(metadata_list=[], label_map=label_map, set_type=DatasetType.TRAINING, **ds_kwargs),
+        AudioClassificationDataset(metadata_list=[], label_map=label_map, set_type=DatasetType.DEV, **ds_kwargs),
+        AudioClassificationDataset(metadata_list=[], label_map=label_map, set_type=DatasetType.TEST, **ds_kwargs),
+    )
+    
+    #train_ds, dev_ds, test_ds = loader.load_splits(ds_path, **ds_kwargs)
+    ww_train_ds.extend(train_ds)
+    ww_dev_ds.extend(dev_ds)
+    ww_test_ds.extend(test_ds)
+    print_stats("Wake word dataset", ctx, ww_train_ds, ww_dev_ds, ww_test_ds)
+
+    ww_dev_pos_ds = ww_dev_ds.filter(lambda x: ctx.searcher.search(x.transcription), clone=True)
+    print_stats("Dev pos dataset", ctx, ww_dev_pos_ds)
+    ww_dev_neg_ds = ww_dev_ds.filter(lambda x: not ctx.searcher.search(x.transcription), clone=True)
+    print_stats("Dev neg dataset", ctx, ww_dev_neg_ds)
+    ww_test_pos_ds = ww_test_ds.filter(lambda x: ctx.searcher.search(x.transcription), clone=True)
+    print_stats("Test pos dataset", ctx, ww_test_pos_ds)
+    ww_test_neg_ds = ww_test_ds.filter(lambda x: not ctx.searcher.search(x.transcription), clone=True)
+    print_stats("Test neg dataset", ctx, ww_test_neg_ds)
 
     device = torch.device(SETTINGS.training.device)
     std_transform = StandardAudioTransform().to(device).eval()
@@ -170,6 +255,7 @@ def main():
     print("model: ", args.model)
     print("dev_acc: ", dev_acc)
     print("test_acc: ", test_acc)
+    do_evaluate()
 # NUM_EPOCHS=20 MAX_WINDOW_SIZE_SECONDS=1 VOCAB='["yes","no"]' BATCH_SIZE=64 LR_DECAY=0.8 LEARNING_RATE=0.01 USE_NOISE_DATASET=True python -m training.run.pretrain_gsc_noisy --model res8 --workspace workspaces/google-noisy-v3
 if __name__ == '__main__':
     main()
