@@ -60,16 +60,7 @@ def main():
     ):
         std_transform.eval()
 
-        if use_frame:
-            engine = FrameInferenceEngine(
-                int(SETTINGS.training.max_window_size_seconds * 1000),
-                int(SETTINGS.training.eval_stride_size_seconds * 1000),
-                model,
-                zmuv_transform,
-                ctx,
-            )
-        else:
-            engine = SequenceInferenceEngine(model, zmuv_transform, ctx)
+        engine = SequenceInferenceEngine(model, zmuv_transform, ctx)
         model.eval()
         conf_matrix = ConfusionMatrix()
         pbar = tqdm(dataset, desc=prefix)
