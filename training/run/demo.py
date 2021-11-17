@@ -41,7 +41,8 @@ def main():
     else:
         engine = SequenceInferenceEngine(model, zmuv_transform, ctx)
     # chunk size of 1000 is required for GSC dataset 
-    client = HowlClient(engine, ctx, -1, 1000)
+    
+    client = HowlClient(engine, ctx, 0, int(settings.training.max_window_size_seconds * 1000))
     client.start().join()
 
 
