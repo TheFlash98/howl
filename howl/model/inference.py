@@ -90,7 +90,7 @@ class InferenceEngine:
                 if target_state == 0:
                     curr_label = label
                     target_state += 1
-                elif target_state < 5:
+                elif target_state < 3:
                     if curr_label == label:
                         target_state += 1
                     else:
@@ -99,6 +99,7 @@ class InferenceEngine:
                 else:
                     self.detected_label = label
                     return True
+                #print("HELLLOOOOO")
                 self.detected_label = label
                 return True
             # if label in self.sequence:
@@ -193,10 +194,11 @@ class FrameInferenceEngine(InferenceEngine):
         sequence_present = False
         #print(len(audio_data), self.max_window_size_ms, self.eval_stride_size_ms, self.sample_rate)
         #GSC - 8000 1000 63 16000
+        #print(self.eval_stride_size_ms)
         for window in stride(audio_data, self.max_window_size_ms, self.eval_stride_size_ms, self.sample_rate):
             #print("FROM INFER", window.size(-1))
-            if window.size(-1) < 1000:
-                break
+            # if window.size(-1) < 1000:
+            #     break
             self.ingest_frame(window.squeeze(0), curr_time=self.curr_time)
             self.curr_time += self.eval_stride_size_ms
             if self.sequence_present(self.curr_time):
@@ -214,7 +216,8 @@ class FrameInferenceEngine(InferenceEngine):
         p = self.model(x, lengths).softmax(-1)[0].cpu().numpy()
 
         p *= self.inference_weights
+        print(p, self.inference_weights)
         p = p / p.sum()
         label = self._append_probability_frame(p, curr_time=curr_time)
-        #print(label)
+        print(p)
         return label
