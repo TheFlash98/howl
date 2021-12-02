@@ -8,7 +8,7 @@ from torch.utils.tensorboard import SummaryWriter
 import torch
 import torch.nn as nn
 
-from howl.settings import HowlSettings, KEY_TO_SETTINGS_CLASS, SETTINGS
+from howl.settings import HowlSettings, KEY_TO_SETTINGS_CLASS, SETTINGS, SETTINGS2
 from howl.utils.dataclass import gather_dict
 
 @dataclass
@@ -51,6 +51,14 @@ class Workspace(object):
             json.dump(gather_dict(settings, keys_to_ignore), f, indent=2)
 
     def load_settings(self, settings: HowlSettings = SETTINGS) -> HowlSettings:
+        """Load settings from JSON file into provided settings object"""
+        with (self.path / 'settings.json').open('r') as f:
+            json_settings = json.load(f)
+            for k, v in json_settings.items():
+                setattr(settings, k, KEY_TO_SETTINGS_CLASS[k](**v))
+        return settings
+
+    def load_settings_2(self, settings: HowlSettings = SETTINGS2) -> HowlSettings:
         """Load settings from JSON file into provided settings object"""
         with (self.path / 'settings.json').open('r') as f:
             json_settings = json.load(f)
