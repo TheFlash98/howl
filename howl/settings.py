@@ -129,3 +129,4 @@ KEY_TO_SETTINGS_CLASS = {
 }
 
 SETTINGS = HowlSettings()
+SETTINGS2 = HowlSettings()

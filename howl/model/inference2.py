@@ -9,13 +9,13 @@ import torch.nn.functional as F
 from howl.context import InferenceContext
 from howl.data.transform import StandardAudioTransform, ZmuvTransform
 from howl.model import RegisteredModel
-from howl.settings import SETTINGS
+from howl.settings import SETTINGS2
 from howl.utils.audio import stride
 
-__all__ = ["FrameInferenceEngine", "InferenceEngine", "SequenceInferenceEngine"]
+__all__ = ["FrameInferenceEngine2", "InferenceEngine2", "SequenceInferenceEngine2"]
 
 
-class InferenceEngine:
+class InferenceEngine2:
     def __init__(
         self, model: RegisteredModel, zmuv_transform: ZmuvTransform, context: InferenceContext, time_provider=time.time
     ):
@@ -23,7 +23,7 @@ class InferenceEngine:
         self.model = model
         self.zmuv = zmuv_transform
         self.std = StandardAudioTransform().eval()
-        self.settings = SETTINGS.inference_engine
+        self.settings = SETTINGS2.inference_engine
         self.context = context
 
         self.inference_weights = 1
@@ -38,7 +38,7 @@ class InferenceEngine:
         if self.coloring:
             self.negative_label = self.coloring.color_map[self.negative_label]
 
-        self.sample_rate = SETTINGS.audio.sample_rate
+        self.sample_rate = SETTINGS2.audio.sample_rate
         self.threshold = self.settings.inference_threshold
         self.inference_window_ms = self.settings.inference_window_ms
         self.smoothing_window_ms = self.settings.smoothing_window_ms
@@ -153,7 +153,7 @@ class InferenceEngine:
         raise NotImplementedError
 
 
-class SequenceInferenceEngine(InferenceEngine):
+class SequenceInferenceEngine2(InferenceEngine2):
     def __init__(self, *args):
         super().__init__(*args)
         self.blank_idx = self.context.blank_label
@@ -185,7 +185,7 @@ class SequenceInferenceEngine(InferenceEngine):
         return sequence_present
 
 
-class FrameInferenceEngine(InferenceEngine):
+class FrameInferenceEngine2(InferenceEngine2):
     def __init__(self, max_window_size_ms: int, eval_stride_size_ms: int, *args):
         super().__init__(*args)
         self.max_window_size_ms, self.eval_stride_size_ms = max_window_size_ms, eval_stride_size_ms
@@ -217,8 +217,8 @@ class FrameInferenceEngine(InferenceEngine):
         p = self.model(x, lengths).softmax(-1)[0].cpu().numpy()
 
         p *= self.inference_weights
-        # print(p, self.inference_weights)
+        #print(p, self.inference_weights)
         p = p / p.sum()
         label = self._append_probability_frame(p, curr_time=curr_time)
-        # print(p)
+        # print(p, label)
         return label

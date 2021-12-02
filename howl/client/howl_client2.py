@@ -10,7 +10,7 @@ from howl.context import InferenceContext
 from howl.model.inference import InferenceEngine
 
 
-class HowlClient:
+class HowlClient2:
     """
     A client for serving Howl models. Users can provide custom listener callbacks
     when a wake word is detected using the `add_listener` method.
@@ -21,7 +21,9 @@ class HowlClient:
 
     def __init__(self,
                  engine: InferenceEngine = None,
+                 engine2: InferenceEngine = None,
                  context: InferenceContext = None,
+                 context2: InferenceContext = None,
                  device: int = -1,
                  chunk_size: int = 500):
         """
@@ -41,12 +43,15 @@ class HowlClient:
         self.device = self._get_device(device)
 
         self.engine: InferenceEngine = engine
+        self.engine2 : InferenceEngine = engine2
         self.ctx: InferenceContext = context
+        self.ctx2: InferenceContext = context2
 
         self._audio_buf = []
         self._audio_buf_len = 16
         self._audio_float_size = 32767
         self._infer_detected = False
+        self._infer_detected_2 = False
         self.last_data = np.zeros(self.chunk_size)
 
     @staticmethod
@@ -72,27 +77,44 @@ class HowlClient:
         self._audio_buf = self._audio_buf[2:]
         arr = self._normalize_audio(audio_data)
         inp = torch.from_numpy(arr).float().to(self.device)
-
         # Inference from input sequence
         if self.engine.infer(inp):
             # Check if inference has already occured for this sequence to prevent
             # duplicate callback execution
             if self._infer_detected:
                 return data_ok
-            print(self.engine.sequence)
+            #print(self.engine.sequence)
 
             self._infer_detected = True
             phrase = ' '.join(self.ctx.vocab[x]
                               for x in self.engine.sequence).title()
+            print(self.engine.sequence)
             #phrase = self.ctx.vocab[self.engine.detected_label]
             prediction_confidence = self.engine.prediction_confidence
-            logging.info(f'{phrase} detected with {prediction_confidence} confidence')
+            logging.info(f'{phrase} detected with {prediction_confidence} confidence by engine 1')
             # Execute user-provided listener callbacks
             for lis in self.listeners:
                 lis(self.engine.sequence)
         else:
             self._infer_detected = False
+        
+        # Inference from input sequence using second engine
+        if self.engine2.infer(inp):
+            # Check if inference has already occured for this sequence to prevent
+            # duplicate callback execution
+            if self._infer_detected_2:
+                return data_ok
+            print(self.engine2.sequence)
 
+            self._infer_detected_2 = True
+            phrase = ' '.join(self.ctx2.vocab[x]
+                             for x in self.engine2.sequence).title()
+            prediction_confidence = self.engine2.prediction_confidence
+            logging.info(f'{phrase} detected with {prediction_confidence} confidence by engine 2')
+            for lis in self.listeners:
+                lis(self.engine2.sequence)
+        else:
+            self._infer_detected_2 = False
         return data_ok
 
     def _normalize_audio(self, audio_data):

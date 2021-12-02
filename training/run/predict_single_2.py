@@ -1,0 +1,227 @@
+from pathlib import Path
+from collections import defaultdict, Counter
+from functools import partial
+import logging
+import json
+
+from tqdm import trange, tqdm
+
+import torch
+from torch.utils import data
+from torchsummary import summary
+from howl.context import InferenceContext
+from howl.data.transform import compose, ZmuvTransform, StandardAudioTransform,\
+    NoiseTransform, batchify, WakeWordFrameBatchifier, truncate_length, DatasetMixer
+from howl.model import RegisteredModel, Workspace
+from howl.data.dataset.base import AudioClipMetadata, DatasetType
+from howl.data.dataset.dataset import AudioClassificationDataset
+from howl.data.dataset import RecursiveNoiseDatasetLoader, Sha256Splitter, WakeWordDataset
+from howl.data.dataloader import StandardAudioDataLoaderBuilder
+from howl.model.inference import FrameInferenceEngine, SequenceInferenceEngine
+from howl.model.inference2 import FrameInferenceEngine2, SequenceInferenceEngine2
+from howl.model import ConfusionMatrix
+from .create_raw_dataset import print_stats
+from howl.settings import SETTINGS
+import warnings
+
+from .args import ArgumentParserBuilder, opt
+
+
+def main():
+
+    def evaluate_accuracy(data_loader, prefix: str, save: bool = False, mixer: DatasetMixer = None):
+        std_transform.eval()
+        model.eval()
+        pbar = tqdm(data_loader, desc=prefix, leave=True, total=len(data_loader))
+        num_corr = 0
+        num_tot = 0
+        counter = Counter()
+        for idx, batch in enumerate(pbar):
+            if mixer is not None:
+                (batch,) = mixer([batch])
+            batch_audio_data = batch.audio_data.to(device)
+            scores = model(zmuv_transform(std_transform(batch_audio_data.unsqueeze(0))), None)
+            num_tot += scores.size(0)
+            labels = torch.tensor([label_map[batch.metadata.transcription]]).to(device)
+            num_corr += (scores.max(1)[1] == labels).float().sum().item()
+            acc = num_corr / num_tot
+            pbar.set_postfix(accuracy=f'{acc:.4}')
+        return num_corr / num_tot
+    def evaluate_engine(
+        dataset: AudioClassificationDataset,
+        prefix: str,
+        save: bool = False,
+        positive_set: bool = False,
+        write_errors: bool = True,
+        mixer: DatasetMixer = None,
+    ):
+        std_transform.eval()
+
+        if use_frame:
+            engine = FrameInferenceEngine(
+                int(SETTINGS.training.max_window_size_seconds * 1000),
+                int(SETTINGS.training.eval_stride_size_seconds * 1000),
+                model,
+                zmuv_transform,
+                ctx,
+            )
+
+            engine2 = FrameInferenceEngine2(
+                int(settings2.training.max_window_size_seconds * 1000),
+                int(settings2.training.eval_stride_size_seconds * 1000),
+                model2,
+                zmuv_transform2,
+                ctx2,
+            )
+        else:
+            engine = SequenceInferenceEngine(model, zmuv_transform, ctx)
+            engine2  = SequenceInferenceEngine2(model2, zmuv_transform2, ctx2)
+        model.eval()
+        model2.eval()
+        conf_matrix = ConfusionMatrix()
+        conf_matrix_2 = ConfusionMatrix()
+        pbar = tqdm(dataset, desc=prefix)
+        if write_errors:
+            with (ws.path / "errors.tsv").open("a") as f:
+                print(prefix, file=f)
+        for idx, ex in enumerate(pbar):
+            if mixer is not None:
+                (ex,) = mixer([ex])
+            audio_data = ex.audio_data.to(device)
+            engine.reset()
+            seq_present = engine.infer(audio_data)
+            audio_data_2 = ex.audio_data.to(device2)
+            engine2.reset()
+            seq_present_2 = engine2.infer(audio_data_2)
+
+            if seq_present != positive_set and write_errors:
+                with (ws.path / "errors.tsv").open("a") as f:
+                    f.write(
+                        f"{ex.metadata.transcription}\t{int(seq_present)}\t{int(positive_set)}\t{ex.metadata.path}\n"
+                    )
+            conf_matrix_2.increment(seq_present_2, positive_set)
+            conf_matrix.increment(seq_present, positive_set)
+            pbar.set_postfix(dict(mcc=f"{conf_matrix.mcc}", c=f"{conf_matrix}"))
+
+        logging.info(f"{conf_matrix}")
+        logging.info(f"{conf_matrix_2}")
+        # if args.eval:
+        #     threshold = engine.threshold
+        #     with (ws.path / (str(round(threshold, 2)) + "_results.csv")).open("a") as f:
+        #         f.write(f"{prefix},{threshold},{conf_matrix.tp},{conf_matrix.tn},{conf_matrix.fp},{conf_matrix.fn}\n")
+    def do_evaluate():
+        # evaluate_engine(ww_dev_pos_ds, "Dev positive", positive_set=True)
+        # evaluate_engine(ww_dev_neg_ds, "Dev negative", positive_set=False)
+        evaluate_engine(ww_test_pos_ds, "Test positive", positive_set=True)
+        evaluate_engine(ww_test_neg_ds, "Test negative", positive_set=False)
+        # evaluate_engine(ww_train_pos_ds, "Train positive", positive_set=True)
+        # evaluate_engine(ww_train_neg_ds, "Train negative", positive_set=False)
+        
+
+    def load_data(path, set_type, **dataset_kwargs):
+        file_map = defaultdict(lambda: DatasetType.TRAINING)
+        with (path / "testing_list.txt").open() as f:
+            file_map.update({k: DatasetType.TEST for k in f.read().split("\n")})
+        with (path / "validation_list.txt").open() as f:
+            file_map.update({k: DatasetType.DEV for k in f.read().split("\n")})
+        all_list  = list(path.glob("*/*.wav"))
+        metadata_list = []
+        for test in all_list:
+            key = str(Path(test.parent.name) / test.name)
+            if file_map[key] != set_type:
+                continue
+            metadata_list.append(AudioClipMetadata(path=test.absolute(), transcription=test.parent.name, 
+                                end_timestamps=[0,0,0,0,0,0,0,0,0,0]))
+            
+        return AudioClassificationDataset(
+            metadata_list=metadata_list, label_map=label_map, set_type=set_type, **dataset_kwargs
+        )
+
+
+    apb = ArgumentParserBuilder()
+    apb.add_options(
+        opt("--model", type=str, choices=RegisteredModel.registered_names(), default="las"),
+        opt("--workspace", type=str, default=str(Path("workspaces") / "default")),
+        opt("--workspace2", type=str, default=str(Path("workspaces") / "default")),
+    )
+    args = apb.parser.parse_args()
+    ws = Workspace(Path(args.workspace), delete_existing=False)
+    settings = ws.load_settings()
+
+    use_frame = settings.training.objective == "frame"
+    ctx = InferenceContext(settings.training.vocab, token_type=settings.training.token_type, use_blank=not use_frame)
+
+    ws2 = Workspace(Path(args.workspace2), delete_existing=False)
+    settings2 = ws2.load_settings_2()
+    ctx2 = InferenceContext(settings2.training.vocab, token_type=settings2.training.token_type, use_blank=not use_frame)
+
+    device = torch.device(settings.training.device)
+    std_transform = StandardAudioTransform().to(device).eval()
+    zmuv_transform = ZmuvTransform().to(device)
+    model = RegisteredModel.find_registered_class(args.model)(ctx.num_labels).to(device).eval()
+    zmuv_transform.load_state_dict(torch.load(str(ws.path / "zmuv.pt.bin"), map_location='cpu'))
+    ws.load_model(model, best=True)
+
+    device2 = torch.device(settings2.training.device)
+    zmuv_transform2 = ZmuvTransform().to(device2)
+    model2 = RegisteredModel.find_registered_class(args.model)(ctx2.num_labels).to(device).eval()
+    zmuv_transform2.load_state_dict(torch.load(str(ws2.path / "zmuv.pt.bin"), map_location='cpu'))
+    ws2.load_model(model2, best=True)
+
+    dataset_path = "/home/sarthak/Projects/Augnito/datasets/google-speech-commands-v2"
+    sr = settings.audio.sample_rate
+    ds_kwargs = dict(sr=sr, mono=settings.audio.use_mono)
+    vocab = settings.training.vocab
+    label_map = defaultdict(lambda: len(vocab))
+    label_map.update({k: idx for idx, k in enumerate(vocab)})
+    train_ds = load_data(Path(dataset_path), DatasetType.TRAINING, **ds_kwargs)
+    dev_ds = load_data(Path(dataset_path), DatasetType.DEV, **ds_kwargs)
+    test_ds = load_data(Path(dataset_path), DatasetType.TEST, **ds_kwargs)
+    label_map = defaultdict(lambda: len(SETTINGS.training.vocab))
+    label_map.update({k: idx for idx, k in enumerate(SETTINGS.training.vocab)})
+    ww_train_ds, ww_dev_ds, ww_test_ds = (
+        AudioClassificationDataset(metadata_list=[], label_map=label_map, set_type=DatasetType.TRAINING, **ds_kwargs),
+        AudioClassificationDataset(metadata_list=[], label_map=label_map, set_type=DatasetType.DEV, **ds_kwargs),
+        AudioClassificationDataset(metadata_list=[], label_map=label_map, set_type=DatasetType.TEST, **ds_kwargs),
+    )
+    
+    #train_ds, dev_ds, test_ds = loader.load_splits(ds_path, **ds_kwargs)
+    ww_train_ds.extend(train_ds)
+    ww_dev_ds.extend(dev_ds)
+    ww_test_ds.extend(test_ds)
+    # print_stats("Hey Augnito dataset", ctx, ww_train_ds, ww_dev_ds, ww_test_ds)
+    ww_train_pos_ds = ww_train_ds.filter(lambda x: ctx.searcher.search(x.transcription), clone=True)
+    # print_stats("Train pos dataset", ctx, ww_train_pos_ds)
+    ww_train_neg_ds = ww_train_ds.filter(lambda x: not ctx.searcher.search(x.transcription), clone=True)
+    # print_stats("Train neg dataset", ctx, ww_train_neg_ds)
+    ww_dev_pos_ds = ww_dev_ds.filter(lambda x: ctx.searcher.search(x.transcription), clone=True)
+    # print_stats("Dev pos dataset", ctx, ww_dev_pos_ds)
+    ww_dev_neg_ds = ww_dev_ds.filter(lambda x: not ctx.searcher.search(x.transcription), clone=True)
+    # print_stats("Dev neg dataset", ctx, ww_dev_neg_ds)
+    ww_test_pos_ds = ww_test_ds.filter(lambda x: ctx.searcher.search(x.transcription), clone=True)
+    # print_stats("Test pos dataset", ctx, ww_test_pos_ds)
+    ww_test_neg_ds = ww_test_ds.filter(lambda x: not ctx.searcher.search(x.transcription), clone=True)
+    # print_stats("Test neg dataset", ctx, ww_test_neg_ds)
+    print(settings.training.use_noise_dataset)
+    if settings.training.use_noise_dataset:
+        noise_ds = RecursiveNoiseDatasetLoader().load(
+            Path(settings.raw_dataset.noise_dataset_path), sr=settings.audio.sample_rate, mono=settings.audio.use_mono
+        )
+        logging.info(f"Loaded {len(noise_ds.metadata_list)} noise files.")
+        noise_ds_train, noise_ds_dev = noise_ds.split(Sha256Splitter(50))
+        noise_ds_dev, noise_ds_test = noise_ds_dev.split(Sha256Splitter(50))
+        test_mixer = DatasetMixer(noise_ds_test, seed=0, do_replace=False)
+        train_mixer = DatasetMixer(noise_ds_train, seed=0, do_replace=False)
+        all_mixer = DatasetMixer(noise_ds, seed=0, do_replace=False)
+    print(len(test_ds))
+    #print(evaluate_accuracy(test_ds, f"Noisy test set with {0} noise files"))
+    if settings.training.use_noise_dataset:
+        print(evaluate_accuracy(test_ds, f"Noisy test set with {len(noise_ds_train.metadata_list)} noise files", mixer=train_mixer))
+        print(evaluate_accuracy(test_ds, f"Noisy test set with {len(noise_ds_test.metadata_list)} noise files", mixer=test_mixer))
+        print(evaluate_accuracy(test_ds, f"Noisy test set with {len(noise_ds.metadata_list)} noise files", mixer=all_mixer))
+    do_evaluate()
+if __name__ == "__main__":
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        main()
+
