@@ -86,39 +86,39 @@ class InferenceEngine:
 
         for history in self.label_history:
             curr_timestamp, label = history
-            # if label in self.sequence:
-            #     if target_state == 0:
-            #         curr_label = label
-            #         target_state += 1
-            #     elif target_state < 3:
-            #         if curr_label == label:
-            #             target_state += 1
-            #         else:
-            #             curr_label = label
-            #             target_state = 1
-            #     else:
-            #         self.detected_label = label
-            #         return True
-            #     #print("HELLLOOOOO")
-            #     self.detected_label = label
-            #     return True
-            # if label in self.sequence:
-            #     #print(self.label_history)
-            #     self.detected_label = label
-            #     return True 
-            target_label = self.sequence[target_state]
-            if label == target_label:
-                # move to next state
-                target_state += 1
-                if target_state == len(self.sequence):
-                    # goal state is reached
-                    #print("HEY AUGNITO DETECTED")
+            if label in self.sequence:
+                if target_state == 0:
+                    curr_label = label
+                    target_state += 1
+                elif target_state < 3:
+                    if curr_label == label:
+                        target_state += 1
+                    else:
+                        curr_label = label
+                        target_state = 1
+                else:
+                    self.detected_label = label
                     return True
-                curr_label = self.sequence[target_state - 1]
-                last_valid_timestamp = curr_timestamp
-            elif label == curr_label:
-                # label has not changed, only update last_valid_timestamp
-                last_valid_timestamp = curr_timestamp
+                #print("HELLLOOOOO")
+                self.detected_label = label
+                return True
+            if label in self.sequence:
+                #print(self.label_history)
+                self.detected_label = label
+                return True 
+            # target_label = self.sequence[target_state]
+            # if label == target_label:
+            #     # move to next state
+            #     target_state += 1
+            #     if target_state == len(self.sequence):
+            #         # goal state is reached
+            #         #print("HEY AUGNITO DETECTED")
+            #         return True
+            #     curr_label = self.sequence[target_state - 1]
+            #     last_valid_timestamp = curr_timestamp
+            # elif label == curr_label:
+            #     # label has not changed, only update last_valid_timestamp
+            #     last_valid_timestamp = curr_timestamp
             elif last_valid_timestamp + self.tolerance_window_ms < curr_timestamp:
                 # out of tolerance window, start from the first state
                 curr_label = None
