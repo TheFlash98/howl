@@ -9,6 +9,7 @@ import torch
 from howl.context import InferenceContext
 from howl.model.inference import InferenceEngine
 
+from scipy.io import wavfile
 
 class HowlClient:
     """
@@ -48,6 +49,7 @@ class HowlClient:
         self._audio_float_size = 32767
         self._infer_detected = False
         self.last_data = np.zeros(self.chunk_size)
+        self.write_counter = 0
 
     @staticmethod
     def list_pretrained(force_reload: bool = False):
@@ -65,14 +67,20 @@ class HowlClient:
         data_ok = (in_data, pyaudio.paContinue)
         self.last_data = in_data
         self._audio_buf.append(in_data)
+        # print(len(self._audio_buf), len(in_data))
         if len(self._audio_buf) != self._audio_buf_len:
             return data_ok
-
         audio_data = b''.join(self._audio_buf)
         self._audio_buf = self._audio_buf[2:]
         arr = self._normalize_audio(audio_data)
         inp = torch.from_numpy(arr).float().to(self.device)
-
+        # print(len(audio_data), len(self._audio_buf), len(arr), len(inp))
+        # For saving audio files
+        # self.write_counter += 1
+        # wavfile.write('/home/sarthak/Projects/Augnito/datasets/collected_audio/python-project/%i' % (self.write_counter),
+        #             16000,
+        #             arr.astype(np.float32))
+        # print(np.frombuffer(audio_data, dtype=np.int16))
         # Inference from input sequence
         if self.engine.infer(inp):
             # Check if inference has already occured for this sequence to prevent
@@ -82,9 +90,9 @@ class HowlClient:
             print(self.engine.sequence)
 
             self._infer_detected = True
-            phrase = ' '.join(self.ctx.vocab[x]
-                              for x in self.engine.sequence).title()
-            #phrase = self.ctx.vocab[self.engine.detected_label]
+            # phrase = ' '.join(self.ctx.vocab[x]
+                            #   for x in self.engine.sequence).title()
+            phrase = self.ctx.vocab[self.engine.detected_label]
             prediction_confidence = self.engine.prediction_confidence
             logging.info(f'{phrase} detected with {prediction_confidence} confidence')
             # Execute user-provided listener callbacks

@@ -130,58 +130,59 @@ def main():
     zmuv_transform = ZmuvTransform().to(device)
     model = RegisteredModel.find_registered_class(args.model)(ctx.num_labels).to(device).eval()
     zmuv_transform.load_state_dict(torch.load(str(ws.path / "zmuv.pt.bin"), map_location='cpu'))
-
+    print(zmuv_transform.mean, zmuv_transform.mean2, zmuv_transform.std)
     ws.load_model(model, best=True)
     print(model)
     print("Model's state_dict:")
-    # weights_dict = defaultdict()
-    # for param_tensor in model.state_dict():
-    #     print(param_tensor, "\t", model.state_dict()[param_tensor].size())
-    #     weights_dict.update({param_tensor : model.state_dict()[param_tensor].tolist()})
-    # for key in weights_dict.keys():
-    #     print(key, type(weights_dict[key]))
-    # with open(str(ws.path / "weights.json"), "w") as outfile:
-    #     json.dump(weights_dict, outfile)
+    weights_dict = defaultdict()
+    for param_tensor in model.state_dict():
+        print(param_tensor, "\t", model.state_dict()[param_tensor].size())
+        weights_dict.update({param_tensor : model.state_dict()[param_tensor].tolist()})
+    for key in weights_dict.keys():
+        print(key, type(weights_dict[key]))
+    with open(str(ws.path / "weights.json"), "w") as outfile:
+        json.dump(weights_dict, outfile)
+    outfile.close()
     pytorch_total_params = sum(p.numel() for p in model.parameters())
     print(pytorch_total_params)
-    dataset_path = "/home/sarthak/Projects/Augnito/datasets/google-speech-commands-v2"
-    sr = settings.audio.sample_rate
-    ds_kwargs = dict(sr=sr, mono=settings.audio.use_mono)
-    vocab = settings.training.vocab
-    label_map = defaultdict(lambda: len(vocab))
-    label_map.update({k: idx for idx, k in enumerate(vocab)})
-    test_ds = load_data(Path(dataset_path), DatasetType.TEST, **ds_kwargs)
-    label_map = defaultdict(lambda: len(SETTINGS.training.vocab))
-    label_map.update({k: idx for idx, k in enumerate(SETTINGS.training.vocab)})
-    ww_train_ds, ww_dev_ds, ww_test_ds = (
-        AudioClassificationDataset(metadata_list=[], label_map=label_map, set_type=DatasetType.TRAINING, **ds_kwargs),
-        AudioClassificationDataset(metadata_list=[], label_map=label_map, set_type=DatasetType.DEV, **ds_kwargs),
-        AudioClassificationDataset(metadata_list=[], label_map=label_map, set_type=DatasetType.TEST, **ds_kwargs),
-    )
+    # dataset_path = "/home/sarthak/Projects/Augnito/datasets/google-speech-commands-v2"
+    # sr = settings.audio.sample_rate
+    # ds_kwargs = dict(sr=sr, mono=settings.audio.use_mono)
+    # vocab = settings.training.vocab
+    # label_map = defaultdict(lambda: len(vocab))
+    # label_map.update({k: idx for idx, k in enumerate(vocab)})
+    # test_ds = load_data(Path(dataset_path), DatasetType.TEST, **ds_kwargs)
+    # label_map = defaultdict(lambda: len(SETTINGS.training.vocab))
+    # label_map.update({k: idx for idx, k in enumerate(SETTINGS.training.vocab)})
+    # ww_train_ds, ww_dev_ds, ww_test_ds = (
+    #     AudioClassificationDataset(metadata_list=[], label_map=label_map, set_type=DatasetType.TRAINING, **ds_kwargs),
+    #     AudioClassificationDataset(metadata_list=[], label_map=label_map, set_type=DatasetType.DEV, **ds_kwargs),
+    #     AudioClassificationDataset(metadata_list=[], label_map=label_map, set_type=DatasetType.TEST, **ds_kwargs),
+    # )
     
-    #train_ds, dev_ds, test_ds = loader.load_splits(ds_path, **ds_kwargs)
-    ww_test_ds.extend(test_ds)
-    ww_test_pos_ds = ww_test_ds.filter(lambda x: ctx.searcher.search(x.transcription), clone=True)
-    print_stats("Test pos dataset", ctx, ww_test_pos_ds)
-    ww_test_neg_ds = ww_test_ds.filter(lambda x: not ctx.searcher.search(x.transcription), clone=True)
-    print_stats("Test neg dataset", ctx, ww_test_neg_ds)
-    print(settings.training.use_noise_dataset)
-    if settings.training.use_noise_dataset:
-        noise_ds = RecursiveNoiseDatasetLoader().load(
-            Path(settings.raw_dataset.noise_dataset_path), sr=settings.audio.sample_rate, mono=settings.audio.use_mono
-        )
-        logging.info(f"Loaded {len(noise_ds.metadata_list)} noise files.")
-        noise_ds_train, noise_ds_dev = noise_ds.split(Sha256Splitter(50))
-        noise_ds_dev, noise_ds_test = noise_ds_dev.split(Sha256Splitter(50))
-        test_mixer = DatasetMixer(noise_ds_test, seed=0, do_replace=False)
-        train_mixer = DatasetMixer(noise_ds_train, seed=0, do_replace=False)
-        all_mixer = DatasetMixer(noise_ds, seed=0, do_replace=False)
-    print(len(test_ds))
-    print(evaluate_accuracy(test_ds, f"Noisy test set with {0} noise files"))
-    if settings.training.use_noise_dataset:
-        print(evaluate_accuracy(test_ds, f"Noisy test set with {len(noise_ds_train.metadata_list)} noise files", mixer=train_mixer))
-        print(evaluate_accuracy(test_ds, f"Noisy test set with {len(noise_ds_test.metadata_list)} noise files", mixer=test_mixer))
-        print(evaluate_accuracy(test_ds, f"Noisy test set with {len(noise_ds.metadata_list)} noise files", mixer=all_mixer))
-    do_evaluate()
+    # #train_ds, dev_ds, test_ds = loader.load_splits(ds_path, **ds_kwargs)
+    # ww_test_ds.extend(test_ds)
+    # ww_test_pos_ds = ww_test_ds.filter(lambda x: ctx.searcher.search(x.transcription), clone=True)
+    # print_stats("Test pos dataset", ctx, ww_test_pos_ds)
+    # ww_test_neg_ds = ww_test_ds.filter(lambda x: not ctx.searcher.search(x.transcription), clone=True)
+    # print_stats("Test neg dataset", ctx, ww_test_neg_ds)
+    # print(settings.training.use_noise_dataset)
+    # if settings.training.use_noise_dataset:
+    #     noise_ds = RecursiveNoiseDatasetLoader().load(
+    #         Path(settings.raw_dataset.noise_dataset_path), sr=settings.audio.sample_rate, mono=settings.audio.use_mono
+    #     )
+    #     logging.info(f"Loaded {len(noise_ds.metadata_list)} noise files.")
+    #     noise_ds_train, noise_ds_dev = noise_ds.split(Sha256Splitter(50))
+    #     noise_ds_dev, noise_ds_test = noise_ds_dev.split(Sha256Splitter(50))
+    #     test_mixer = DatasetMixer(noise_ds_test, seed=0, do_replace=False)
+    #     train_mixer = DatasetMixer(noise_ds_train, seed=0, do_replace=False)
+    #     all_mixer = DatasetMixer(noise_ds, seed=0, do_replace=False)
+    # print(len(test_ds))
+    # print(evaluate_accuracy(test_ds, f"Noisy test set with {0} noise files"))
+    # if settings.training.use_noise_dataset:
+    #     print(evaluate_accuracy(test_ds, f"Noisy test set with {len(noise_ds_train.metadata_list)} noise files", mixer=train_mixer))
+    #     print(evaluate_accuracy(test_ds, f"Noisy test set with {len(noise_ds_test.metadata_list)} noise files", mixer=test_mixer))
+    #     print(evaluate_accuracy(test_ds, f"Noisy test set with {len(noise_ds.metadata_list)} noise files", mixer=all_mixer))
+    # do_evaluate()
 if __name__ == "__main__":
     main()

@@ -8,6 +8,7 @@ import torch
 
 from howl.context import InferenceContext
 from howl.model.inference import InferenceEngine
+import time
 
 
 class HowlClient2:
@@ -54,6 +55,9 @@ class HowlClient2:
         self._infer_detected_2 = False
         self.last_data = np.zeros(self.chunk_size)
 
+        self.hey_timestamp = []
+        self.augnito_timestamp = []
+
     @staticmethod
     def list_pretrained(force_reload: bool = False):
         """Show a list of available pretrained models"""
@@ -86,9 +90,24 @@ class HowlClient2:
             #print(self.engine.sequence)
 
             self._infer_detected = True
+            # print(self.engine2.label_history)
+            # print(self.engine.label_history)
+            # augnito_history = self.engine.label_history[-1]
+            # print(augnito_history)
+            augnito_timestamp = time.time()
+            hey_timestamp = self.hey_timestamp[-1]
+            # for history in self.engine2.label_history:
+            #     hey_label = history[1]
+            #     if hey_label == 0:
+            #         hey_timestamp = history[0]
+            print(augnito_timestamp - hey_timestamp)
+            if(((augnito_timestamp - hey_timestamp) < 3 and (augnito_timestamp - hey_timestamp) > 0) or self.engine.prediction_confidence > 0.80):
+                print("WAKE UP")
+
+
             phrase = ' '.join(self.ctx.vocab[x]
                               for x in self.engine.sequence).title()
-            print(self.engine.sequence)
+            # print(self.engine.sequence, "engine 1")
             #phrase = self.ctx.vocab[self.engine.detected_label]
             prediction_confidence = self.engine.prediction_confidence
             logging.info(f'{phrase} detected with {prediction_confidence} confidence by engine 1')
@@ -104,9 +123,14 @@ class HowlClient2:
             # duplicate callback execution
             if self._infer_detected_2:
                 return data_ok
-            print(self.engine2.sequence)
-
+            # print(self.engine2.sequence, "engine 2")
+            # print(self.engine2.label_history)
             self._infer_detected_2 = True
+            if(len(self.hey_timestamp) > 20):
+                self.hey_timestamp = []
+                self.hey_timestamp.append(time.time())
+            else:
+                self.hey_timestamp.append(time.time())
             phrase = ' '.join(self.ctx2.vocab[x]
                              for x in self.engine2.sequence).title()
             prediction_confidence = self.engine2.prediction_confidence

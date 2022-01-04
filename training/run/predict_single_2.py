@@ -99,8 +99,8 @@ def main():
                     f.write(
                         f"{ex.metadata.transcription}\t{int(seq_present)}\t{int(positive_set)}\t{ex.metadata.path}\n"
                     )
-            conf_matrix_2.increment(seq_present_2, positive_set)
-            conf_matrix.increment(seq_present, positive_set)
+            conf_matrix.increment(seq_present and seq_present_2, positive_set)
+            conf_matrix_2.increment(seq_present_2 or seq_present, positive_set)
             pbar.set_postfix(dict(mcc=f"{conf_matrix.mcc}", c=f"{conf_matrix}"))
 
         logging.info(f"{conf_matrix}")
@@ -179,6 +179,7 @@ def main():
     test_ds = load_data(Path(dataset_path), DatasetType.TEST, **ds_kwargs)
     label_map = defaultdict(lambda: len(SETTINGS.training.vocab))
     label_map.update({k: idx for idx, k in enumerate(SETTINGS.training.vocab)})
+    print(label_map)
     ww_train_ds, ww_dev_ds, ww_test_ds = (
         AudioClassificationDataset(metadata_list=[], label_map=label_map, set_type=DatasetType.TRAINING, **ds_kwargs),
         AudioClassificationDataset(metadata_list=[], label_map=label_map, set_type=DatasetType.DEV, **ds_kwargs),
@@ -199,9 +200,9 @@ def main():
     ww_dev_neg_ds = ww_dev_ds.filter(lambda x: not ctx.searcher.search(x.transcription), clone=True)
     # print_stats("Dev neg dataset", ctx, ww_dev_neg_ds)
     ww_test_pos_ds = ww_test_ds.filter(lambda x: ctx.searcher.search(x.transcription), clone=True)
-    # print_stats("Test pos dataset", ctx, ww_test_pos_ds)
+    print_stats("Test pos dataset", ctx, ww_test_pos_ds)
     ww_test_neg_ds = ww_test_ds.filter(lambda x: not ctx.searcher.search(x.transcription), clone=True)
-    # print_stats("Test neg dataset", ctx, ww_test_neg_ds)
+    print_stats("Test neg dataset", ctx, ww_test_neg_ds)
     print(settings.training.use_noise_dataset)
     if settings.training.use_noise_dataset:
         noise_ds = RecursiveNoiseDatasetLoader().load(

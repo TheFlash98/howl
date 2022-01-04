@@ -99,7 +99,6 @@ class InferenceEngine:
                 else:
                     self.detected_label = label
                     return True
-                #print("HELLLOOOOO")
                 self.detected_label = label
                 return True
             if label in self.sequence:
